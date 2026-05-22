@@ -2,12 +2,12 @@ name: Trigger Daily Reports
 
 on:
   schedule:
-    # A-Share: 07:00 UTC = 15:00 Beijing
-    - cron: '0 7 * * 1-5'
-    # US Equity EDT: 20:00 UTC = 16:00 EDT
-    - cron: '0 20 * * 1-5'
-    # US Equity EST: 21:00 UTC = 16:00 EST
-    - cron: '0 21 * * 1-5'
+    # A-Share: 07:03 UTC ≈ 15:03 Beijing
+    - cron: '3 7 * * 1-5'
+    # US Equity EDT: 20:03 UTC ≈ 16:03 EDT
+    - cron: '3 20 * * 1-5'
+    # US Equity EST: 21:03 UTC ≈ 16:03 EST
+    - cron: '3 21 * * 1-5'
 
   workflow_dispatch:
 
