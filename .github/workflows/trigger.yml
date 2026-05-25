@@ -2,9 +2,20 @@ name: Trigger Daily Reports
 
 on:
   schedule:
-    - cron: '3 7 * * 1-5'   # A-Share close (07:03 UTC = 15:03 Beijing)
-    - cron: '3 20 * * 1-5'  # US close EDT (20:03 UTC = 16:03 EDT)
-    - cron: '3 21 * * 1-5'  # US close EST (21:03 UTC = 16:03 EST)
+    # A-Share window: 07:00-08:00 UTC (15:00-16:00 Beijing)
+    # Multiple slots hedge against GitHub scheduler delays
+    - cron: '3 7 * * 1-5'
+    - cron: '13 7 * * 1-5'
+    - cron: '23 7 * * 1-5'
+    - cron: '33 7 * * 1-5'
+    # US window EDT: 20:00-21:00 UTC (16:00-17:00 EDT)
+    - cron: '3 20 * * 1-5'
+    - cron: '13 20 * * 1-5'
+    - cron: '23 20 * * 1-5'
+    # US window EST: 21:00-22:00 UTC (16:00-17:00 EST)
+    - cron: '3 21 * * 1-5'
+    - cron: '13 21 * * 1-5'
+    - cron: '23 21 * * 1-5'
 
   workflow_dispatch:
 
