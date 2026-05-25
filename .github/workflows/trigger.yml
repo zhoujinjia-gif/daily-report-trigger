@@ -2,12 +2,9 @@ name: Trigger Daily Reports
 
 on:
   schedule:
-    # A-Share: 07:03 UTC ≈ 15:03 Beijing
-    - cron: '3 7 * * 1-5'
-    # US Equity EDT: 20:03 UTC ≈ 16:03 EDT
-    - cron: '3 20 * * 1-5'
-    # US Equity EST: 21:03 UTC ≈ 16:03 EST
-    - cron: '3 21 * * 1-5'
+    - cron: '3 7 * * 1-5'   # A-Share close (07:03 UTC = 15:03 Beijing)
+    - cron: '3 20 * * 1-5'  # US close EDT (20:03 UTC = 16:03 EDT)
+    - cron: '3 21 * * 1-5'  # US close EST (21:03 UTC = 16:03 EST)
 
   workflow_dispatch:
 
@@ -17,41 +14,24 @@ jobs:
     timeout-minutes: 2
 
     steps:
-      - name: Trigger A-Share report (07:00 UTC only)
+      - name: Dispatch A-Share report
         env:
           PAT: ${{ secrets.REPO_PAT }}
         run: |
-          HOUR=$(date -u +%H)
-          if [ "$HOUR" != "07" ]; then
-            echo "Skipping A-Share — only triggers at 07:00 UTC"
-            exit 0
-          fi
           curl -s -X POST \
             -H "Authorization: token $PAT" \
             -H "Accept: application/vnd.github+json" \
             https://api.github.com/repos/zhoujinjia-gif/A-Share-report/dispatches \
             -d '{"event_type":"send_report"}'
-          echo "A-Share trigger sent."
+          echo "A-Share dispatch sent."
 
-      - name: Trigger US-Equity report (20:00 EDT / 21:00 EST)
+      - name: Dispatch US-Equity report
         env:
           PAT: ${{ secrets.REPO_PAT }}
         run: |
-          HOUR=$(date -u +%H)
-          # DST detection: EDT = UTC-4 (-0400), EST = UTC-5 (-0500)
-          OFFSET=$(TZ=America/New_York date +%z)
-          if [ "$OFFSET" = "-0400" ]; then
-            TARGET=20  # EDT: market closes 16:00 EDT = 20:00 UTC
-          else
-            TARGET=21  # EST: market closes 16:00 EST = 21:00 UTC
-          fi
-          if [ "$HOUR" != "$TARGET" ]; then
-            echo "Skipping US-Equity — DST offset=$OFFSET, target hour=$TARGET, current hour=$HOUR"
-            exit 0
-          fi
           curl -s -X POST \
             -H "Authorization: token $PAT" \
             -H "Accept: application/vnd.github+json" \
             https://api.github.com/repos/zhoujinjia-gif/US-Equity-report/dispatches \
             -d '{"event_type":"send_report"}'
-          echo "US-Equity trigger sent (DST offset=$OFFSET)."
+          echo "US-Equity dispatch sent."
