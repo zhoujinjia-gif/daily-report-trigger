@@ -24,34 +24,24 @@ jobs:
     timeout-minutes: 2
 
     steps:
-      - name: Dispatch A-Share report (06:00–12:00 UTC window)
+      - name: Dispatch A-Share report
         env:
           PAT: ${{ secrets.REPO_PAT }}
         run: |
-          HOUR=$(date -u +%H)
-          if [ "$HOUR" -ge 6 ] && [ "$HOUR" -lt 12 ]; then
-            curl -s -X POST \
-              -H "Authorization: token $PAT" \
-              -H "Accept: application/vnd.github+json" \
-              https://api.github.com/repos/zhoujinjia-gif/A-Share-report/dispatches \
-              -d '{"event_type":"send_report"}'
-            echo "A-Share dispatch sent (HOUR=$HOUR)."
-          else
-            echo "Outside A-Share window (HOUR=$HOUR). Skipping."
-          fi
+          curl -s -X POST \
+            -H "Authorization: token $PAT" \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/zhoujinjia-gif/A-Share-report/dispatches \
+            -d '{"event_type":"send_report"}'
+          echo "A-Share dispatch sent."
 
-      - name: Dispatch US-Equity report (19:00–02:00 UTC window)
+      - name: Dispatch US-Equity report
         env:
           PAT: ${{ secrets.REPO_PAT }}
         run: |
-          HOUR=$(date -u +%H)
-          if [ "$HOUR" -ge 19 ] || [ "$HOUR" -lt 2 ]; then
-            curl -s -X POST \
-              -H "Authorization: token $PAT" \
-              -H "Accept: application/vnd.github+json" \
-              https://api.github.com/repos/zhoujinjia-gif/US-Equity-report/dispatches \
-              -d '{"event_type":"send_report"}'
-            echo "US-Equity dispatch sent (HOUR=$HOUR)."
-          else
-            echo "Outside US window (HOUR=$HOUR). Skipping."
-          fi
+          curl -s -X POST \
+            -H "Authorization: token $PAT" \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/zhoujinjia-gif/US-Equity-report/dispatches \
+            -d '{"event_type":"send_report"}'
+          echo "US-Equity dispatch sent."
