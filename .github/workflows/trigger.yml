@@ -2,19 +2,8 @@ name: Trigger Daily Reports
 
 on:
   schedule:
-    # A-Share window: 07:00 UTC (15:00 Beijing)
-    - cron: '3 7 * * 1-5'
-    - cron: '13 7 * * 1-5'
-    - cron: '23 7 * * 1-5'
-    - cron: '33 7 * * 1-5'
-    # US window EDT: 20:00 UTC (16:00 EDT)
-    - cron: '3 20 * * 1-5'
-    - cron: '13 20 * * 1-5'
-    - cron: '23 20 * * 1-5'
-    # US window EST: 21:00 UTC (16:00 EST)
-    - cron: '3 21 * * 1-5'
-    - cron: '13 21 * * 1-5'
-    - cron: '23 21 * * 1-5'
+    # 21:30 UTC = Beijing 05:30 (both markets closed)
+    - cron: '30 21 * * 1-5'
 
   workflow_dispatch:
 
