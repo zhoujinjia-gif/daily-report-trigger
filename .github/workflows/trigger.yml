@@ -2,8 +2,8 @@ name: Trigger Daily Reports
 
 on:
   schedule:
-    # 21:30 UTC = Beijing 05:30 (both markets closed)
-    - cron: '30 21 * * 1-5'
+    # 21:00 UTC = Beijing 05:00 (both markets closed)
+    - cron: '0 21 * * 1-5'
 
   workflow_dispatch:
 
