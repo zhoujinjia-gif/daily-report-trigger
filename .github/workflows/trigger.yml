@@ -1,6 +1,9 @@
 name: Trigger Daily Reports
 
 on:
+  schedule:
+    - cron: '0 21 * * 1-5'
+
   workflow_dispatch:
 
 jobs:
