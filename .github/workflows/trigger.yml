@@ -2,7 +2,10 @@ name: Trigger Daily Reports
 
 on:
   schedule:
-    - cron: '0 21 * * 1-5'
+    # US market close = 16:00 ET = 20:00 UTC (EDT, ~Mar-Nov) / 21:00 UTC (EST, ~Nov-Mar)
+    # Both crons fire year-round; the receiving repos handle idempotency
+    - cron: '2 20 * * 1-5'
+    - cron: '2 21 * * 1-5'
 
   workflow_dispatch:
 
