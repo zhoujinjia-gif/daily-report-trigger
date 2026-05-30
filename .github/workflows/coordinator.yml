@@ -1,0 +1,246 @@
+# daily-report-trigger/.github/workflows/coordinator.yml
+# 统一触发器 — 每个美股交易日 21:15 UTC（北京时间次日 05:15）发送双日报 + 月底月报
+
+name: Daily Report Coordinator
+
+on:
+  schedule:
+    # 21:15 UTC，周一至五
+    # 夏令时: 美股收盘(20:00 UTC)后 75 分钟
+    # 冬令时: 美股收盘(21:00 UTC)后 15 分钟
+    - cron: '15 21 * * 1-5'
+
+  workflow_dispatch:
+    inputs:
+      force:
+        description: '强制运行（跳过所有去重检查）'
+        required: false
+        default: 'false'
+        type: choice
+        options: ['false', 'true']
+      reports:
+        description: '发送哪些报告（逗号分隔: a_share,us_equity,monthly）'
+        required: false
+        default: 'a_share,us_equity'
+
+env:
+  TZ: 'Asia/Shanghai'
+
+jobs:
+  # ── Job 1: 去重检查 ──
+  dedup-check:
+    runs-on: ubuntu-latest
+    outputs:
+      should_run: ${{ steps.check.outputs.should_run }}
+      today: ${{ steps.check.outputs.today }}
+    steps:
+      - name: Get today's date
+        id: date
+        run: echo "TODAY=$(date -u +%Y-%m-%d)" >> $GITHUB_OUTPUT
+
+      - name: Check dedup cache
+        id: check
+        uses: actions/cache/restore@v4
+        with:
+          path: .coordinator-dedup
+          key: coordinator-dispatched-${{ steps.date.outputs.TODAY }}
+
+      - name: Set run decision
+        id: decide
+        run: |
+          FORCE="${{ github.event.inputs.force }}"
+          CACHE_HIT="${{ steps.check.outputs.cache-hit }}"
+          TODAY="${{ steps.date.outputs.TODAY }}"
+
+          if [ "$FORCE" = "true" ]; then
+            echo "should_run=true" >> $GITHUB_OUTPUT
+            echo "✅ Force mode: will run"
+          elif [ "$CACHE_HIT" = "true" ]; then
+            echo "should_run=false" >> $GITHUB_OUTPUT
+            echo "⏭ Already dispatched today ($TODAY), skipping"
+          else
+            echo "should_run=true" >> $GITHUB_OUTPUT
+            echo "✅ First run today ($TODAY), will dispatch"
+          fi
+          echo "today=$TODAY" >> $GITHUB_OUTPUT
+
+  # ── Job 2: 市场日检查 ──
+  check-market:
+    runs-on: ubuntu-latest
+    needs: dedup-check
+    if: needs.dedup-check.outputs.should_run == 'true'
+    outputs:
+      is_trading_day: ${{ steps.market.outputs.is_trading_day }}
+      is_month_end: ${{ steps.market.outputs.is_month_end }}
+    steps:
+      - name: Check US market status
+        id: market
+        run: |
+          python3 << 'EOF'
+          import sys
+          from datetime import datetime, date, timedelta
+          import os
+
+          today = date.today()
+          weekday = today.weekday()  # 0=Monday, 6=Sunday
+
+          # 周末不是交易日
+          if weekday >= 5:
+              print("Not a trading day (weekend)")
+              os.system("echo 'is_trading_day=false' >> $GITHUB_OUTPUT")
+              os.system("echo 'is_month_end=false' >> $GITHUB_OUTPUT")
+              sys.exit(0)
+
+          # 美股主要假期（非完整列表，但覆盖主要节假日）
+          US_HOLIDAYS_2026 = {
+              date(2026, 1, 1),   # 元旦
+              date(2026, 1, 19),  # MLK Day
+              date(2026, 2, 16),  # Presidents Day
+              date(2026, 4, 3),   # Good Friday
+              date(2026, 5, 25),  # Memorial Day
+              date(2026, 7, 3),   # Independence Day observed
+              date(2026, 9, 7),   # Labor Day
+              date(2026, 11, 26), # Thanksgiving
+              date(2026, 11, 27), # Black Friday (half day, treat as holiday)
+              date(2026, 12, 25), # Christmas
+          }
+          US_HOLIDAYS_2027 = {
+              date(2027, 1, 1),
+              date(2027, 1, 18),
+              date(2027, 2, 15),
+              date(2027, 3, 26),  # Good Friday
+              date(2027, 5, 31),  # Memorial Day
+              date(2027, 7, 5),   # Independence Day observed
+              date(2027, 9, 6),   # Labor Day
+              date(2027, 11, 25), # Thanksgiving
+              date(2027, 12, 24), # Christmas observed
+          }
+          US_HOLIDAYS = US_HOLIDAYS_2026 | US_HOLIDAYS_2027
+
+          is_trading = today not in US_HOLIDAYS
+
+          # 是否为月末最后交易日
+          is_month_end = False
+          if is_trading:
+              # 检查接下来 3 天是否还有同月交易日
+              has_future_trading = False
+              for i in range(1, 4):
+                  future = today + timedelta(days=i)
+                  if future.month != today.month:
+                      break  # 已进入下月
+                  if future.weekday() < 5 and future not in US_HOLIDAYS:
+                      has_future_trading = True
+                      break
+              is_month_end = not has_future_trading
+
+          import os
+          os.system(f"echo 'is_trading_day={'true' if is_trading else 'false'}' >> $GITHUB_OUTPUT")
+          os.system(f"echo 'is_month_end={'true' if is_month_end else 'false'}' >> $GITHUB_OUTPUT")
+          print(f"Trading day: {is_trading}, Month end: {is_month_end}")
+          EOF
+
+  # ── Job 3: 发送 A股日报 ──
+  dispatch-a-share:
+    runs-on: ubuntu-latest
+    needs: [dedup-check, check-market]
+    if: |
+      needs.check-market.outputs.is_trading_day == 'true' &&
+      (github.event.inputs.reports == '' || contains(github.event.inputs.reports, 'a_share'))
+    steps:
+      - name: Dispatch A-Share daily report
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.REPO_PAT }}
+          script: |
+            const today = '${{ needs.dedup-check.outputs.today }}';
+            const force = '${{ github.event.inputs.force }}' === 'true';
+
+            await github.rest.repos.createDispatchEvent({
+              owner: context.repo.owner,
+              repo: 'A-Share-report',          // ← 确认为你的实际仓库名
+              event_type: 'send_report',
+              client_payload: {
+                date: today,
+                force: force,
+                source: 'coordinator'
+              }
+            });
+
+            console.log(`✅ A-Share report dispatched for ${today}`);
+
+  # ── Job 4: 发送美股日报 ──
+  dispatch-us-equity:
+    runs-on: ubuntu-latest
+    needs: [dedup-check, check-market]
+    if: |
+      needs.check-market.outputs.is_trading_day == 'true' &&
+      (github.event.inputs.reports == '' || contains(github.event.inputs.reports, 'us_equity'))
+    steps:
+      - name: Dispatch US Equity daily report
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.REPO_PAT }}
+          script: |
+            const today = '${{ needs.dedup-check.outputs.today }}';
+            const force = '${{ github.event.inputs.force }}' === 'true';
+
+            await github.rest.repos.createDispatchEvent({
+              owner: context.repo.owner,
+              repo: 'US-Equity-report',        // ← 确认为你的实际仓库名
+              event_type: 'send_report',
+              client_payload: {
+                date: today,
+                force: force,
+                source: 'coordinator'
+              }
+            });
+
+            console.log(`✅ US Equity report dispatched for ${today}`);
+
+  # ── Job 5: 发送月报（仅月末）──
+  dispatch-monthly:
+    runs-on: ubuntu-latest
+    needs: [dedup-check, check-market]
+    if: |
+      needs.check-market.outputs.is_trading_day == 'true' &&
+      needs.check-market.outputs.is_month_end == 'true' &&
+      (github.event.inputs.reports == '' || contains(github.event.inputs.reports, 'monthly'))
+    steps:
+      - name: Dispatch Monthly report
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.REPO_PAT }}
+          script: |
+            const today = '${{ needs.dedup-check.outputs.today }}';
+            const force = '${{ github.event.inputs.force }}' === 'true';
+
+            await github.rest.repos.createDispatchEvent({
+              owner: context.repo.owner,
+              repo: 'monthly-full-market-report', // ← 确认为你的实际仓库名
+              event_type: 'send_report',
+              client_payload: {
+                date: today,
+                force: force,
+                source: 'coordinator',
+                is_month_end: true
+              }
+            });
+
+            console.log(`✅ Monthly report dispatched for ${today} (MONTH END)`);
+
+  # ── Job 6: 写入去重缓存（仅成功后）──
+  mark-dispatched:
+    runs-on: ubuntu-latest
+    needs: [dedup-check, dispatch-a-share, dispatch-us-equity]
+    if: always() && needs.dedup-check.outputs.should_run == 'true'
+    steps:
+      - name: Create dedup marker
+        run: |
+          mkdir -p .coordinator-dedup
+          echo "${{ needs.dedup-check.outputs.today }}" > .coordinator-dedup/last-dispatch.txt
+
+      - name: Save dedup cache
+        uses: actions/cache/save@v4
+        with:
+          path: .coordinator-dedup
+          key: coordinator-dispatched-${{ needs.dedup-check.outputs.today }}
