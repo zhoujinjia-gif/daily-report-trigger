@@ -31,8 +31,8 @@ jobs:
   dedup-check:
     runs-on: ubuntu-latest
     outputs:
-      should_run: ${{ steps.check.outputs.should_run }}
-      today: ${{ steps.check.outputs.today }}
+      should_run: ${{ steps.decide.outputs.should_run }}
+      today: ${{ steps.decide.outputs.today }}
     steps:
       - name: Get today's date
         id: date
