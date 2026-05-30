@@ -75,11 +75,20 @@ jobs:
     steps:
       - name: Check US market status
         id: market
+        env:
+          FORCE: ${{ github.event.inputs.force }}
         run: |
           python3 << 'EOF'
           import sys
           from datetime import datetime, date, timedelta
           import os
+
+          force = os.environ.get("FORCE", "false")
+          if force == "true":
+              print("⚡ Force mode: bypassing market day check")
+              os.system("echo 'is_trading_day=true' >> $GITHUB_OUTPUT")
+              os.system("echo 'is_month_end=true' >> $GITHUB_OUTPUT")
+              sys.exit(0)
 
           today = date.today()
           weekday = today.weekday()  # 0=Monday, 6=Sunday
