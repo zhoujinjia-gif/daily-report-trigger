@@ -40,8 +40,8 @@
 | `REPO_PAT` | 有权限 dispatch 其他仓库的 Personal Access Token |
 
 ### REPO_PAT 创建方法
-1. GitHub → Settings → Developer settings → Personal access tokens → Fine-grained tokens
-2. 选择 Resource owner 为你的账号
-3. Repository access：选择 A-Share-report、US-Equity-report、monthly-full-market-report
-4. Permissions → Repository permissions → Actions → Read and write
-5. 生成 token，复制后添加到本仓库 Secrets
+1. GitHub → Settings → Developer settings → Personal access tokens → Tokens (classic)
+2. Generate new token (classic)
+3. 勾选 `repo` scope（全仓读写权限）
+4. 生成 token，复制后添加到本仓库 Secrets
+5. ⚠️ 必须使用 Classic PAT，Fine-grained PAT 的 Actions 权限不兼容 dispatch API

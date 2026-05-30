@@ -38,8 +38,9 @@ daily-report-trigger/
 │   └── workflows/
 │       └── coordinator.yml          # 核心调度 workflow（唯一的 workflow 文件）
 ├── README.md                        # 用户文档
-├── trigger-v2-prompt.md             # v2 重设计 spec（存档）
-└── daily-report-trigger-architecture-v2.md  # 本文件
+└── history/
+    ├── trigger-v2-prompt.md          # v2 重设计 spec（存档）
+    └── daily-report-trigger-architecture-v2.md  # 本文件
 ```
 
 ---
