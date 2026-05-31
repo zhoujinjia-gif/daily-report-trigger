@@ -108,5 +108,7 @@ daily-report-trigger/
 
 ## 相关链接
 
-- 架构详解：`history/daily-report-trigger-architecture-v2.md`
+- 架构详解：`history/daily-report-trigger-architecture-v3.md`
+- v2 文档：`history/daily-report-trigger-architecture-v2.md`
+- Coordinator 备份：`history/coordinator-v3.yml`
 - 各报告仓库的 Actions 页面可直接手动触发（应急备用）

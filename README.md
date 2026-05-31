@@ -91,7 +91,10 @@ daily-report-trigger/
 ├── README-CN.md
 └── history/                            # Design docs & specs
     ├── daily-report-trigger-architecture-v2.md
-    └── daily-report-trigger-v2-prompt.md
+    ├── daily-report-trigger-architecture-v3.md
+    ├── daily-report-trigger-v2-prompt.md
+    ├── daily-report-trigger-v3-prompt.md
+    └── coordinator-v3.yml              # v3 workflow backup
 ```
 
 ## Troubleshooting
