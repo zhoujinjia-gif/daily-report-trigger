@@ -23,8 +23,10 @@ on:
         required: false
         default: 'a_share,us_equity'
 
+# 注意：所有日期判断使用 UTC，因为 workflow 在 21:15 UTC 运行（美股已收盘）
+# UTC 日期 = 正确的交易日，不依赖 Asia/Shanghai TZ，避免日期偏移
 env:
-  TZ: 'Asia/Shanghai'
+  TZ: 'UTC'
 
 jobs:
   # ── Job 1: 去重检查 ──
@@ -90,7 +92,7 @@ jobs:
               os.system("echo 'is_month_end=true' >> $GITHUB_OUTPUT")
               sys.exit(0)
 
-          today = date.today()
+          today = datetime.utcnow().date()
           weekday = today.weekday()  # 0=Monday, 6=Sunday
 
           # 周末不是交易日
