@@ -42,7 +42,7 @@ jobs:
 
       - name: Check dedup cache
         id: check
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: .coordinator-dedup
           key: coordinator-dispatched-${{ steps.date.outputs.TODAY }}
@@ -159,7 +159,7 @@ jobs:
       (github.event.inputs.reports == '' || contains(github.event.inputs.reports, 'a_share'))
     steps:
       - name: Dispatch A-Share daily report
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           github-token: ${{ secrets.REPO_PAT }}
           script: |
@@ -168,7 +168,7 @@ jobs:
 
             await github.rest.repos.createDispatchEvent({
               owner: context.repo.owner,
-              repo: 'A-Share-report',          // ← 确认为你的实际仓库名
+              repo: 'A-Share-report',
               event_type: 'send_report',
               client_payload: {
                 date: today,
@@ -188,7 +188,7 @@ jobs:
       (github.event.inputs.reports == '' || contains(github.event.inputs.reports, 'us_equity'))
     steps:
       - name: Dispatch US Equity daily report
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           github-token: ${{ secrets.REPO_PAT }}
           script: |
@@ -197,7 +197,7 @@ jobs:
 
             await github.rest.repos.createDispatchEvent({
               owner: context.repo.owner,
-              repo: 'US-Equity-report',        // ← 确认为你的实际仓库名
+              repo: 'US-Equity-report',
               event_type: 'send_report',
               client_payload: {
                 date: today,
@@ -218,7 +218,7 @@ jobs:
       (github.event.inputs.reports == '' || contains(github.event.inputs.reports, 'monthly'))
     steps:
       - name: Dispatch Monthly report
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           github-token: ${{ secrets.REPO_PAT }}
           script: |
@@ -227,7 +227,7 @@ jobs:
 
             await github.rest.repos.createDispatchEvent({
               owner: context.repo.owner,
-              repo: 'monthly-full-market-report', // ← 确认为你的实际仓库名
+              repo: 'monthly-full-market-report',
               event_type: 'send_report',
               client_payload: {
                 date: today,
@@ -251,7 +251,7 @@ jobs:
           echo "${{ needs.dedup-check.outputs.today }}" > .coordinator-dedup/last-dispatch.txt
 
       - name: Save dedup cache
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: .coordinator-dedup
           key: coordinator-dispatched-${{ needs.dedup-check.outputs.today }}
