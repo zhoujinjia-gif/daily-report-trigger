@@ -156,7 +156,7 @@ jobs:
     needs: [dedup-check, check-market]
     if: |
       needs.check-market.outputs.is_trading_day == 'true' &&
-      (github.event.inputs.reports == '' || contains(github.event.inputs.reports, 'a_share'))
+      (github.event_name == 'schedule' || github.event.inputs.reports == '' || contains(github.event.inputs.reports, 'a_share'))
     steps:
       - name: Dispatch A-Share daily report
         uses: actions/github-script@v9
@@ -185,7 +185,7 @@ jobs:
     needs: [dedup-check, check-market]
     if: |
       needs.check-market.outputs.is_trading_day == 'true' &&
-      (github.event.inputs.reports == '' || contains(github.event.inputs.reports, 'us_equity'))
+      (github.event_name == 'schedule' || github.event.inputs.reports == '' || contains(github.event.inputs.reports, 'us_equity'))
     steps:
       - name: Dispatch US Equity daily report
         uses: actions/github-script@v9
@@ -215,7 +215,7 @@ jobs:
     if: |
       needs.check-market.outputs.is_trading_day == 'true' &&
       needs.check-market.outputs.is_month_end == 'true' &&
-      (github.event.inputs.reports == '' || contains(github.event.inputs.reports, 'monthly'))
+      (github.event_name == 'schedule' || github.event.inputs.reports == '' || contains(github.event.inputs.reports, 'monthly'))
     steps:
       - name: Dispatch Monthly report
         uses: actions/github-script@v9
