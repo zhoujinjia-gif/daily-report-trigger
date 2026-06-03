@@ -133,9 +133,9 @@ jobs:
           # 是否为月末最后交易日
           is_month_end = False
           if is_trading:
-              # 检查接下来 3 天是否还有同月交易日
+              # 扫描当月剩余所有天数，检查是否还有交易日
               has_future_trading = False
-              for i in range(1, 4):
+              for i in range(1, 32):
                   future = today + timedelta(days=i)
                   if future.month != today.month:
                       break  # 已进入下月
