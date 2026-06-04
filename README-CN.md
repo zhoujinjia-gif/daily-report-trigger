@@ -1,6 +1,6 @@
 # 每日报告调度中心（Daily Report Coordinator）
 
-每个美股交易日 21:15 UTC（北京时间次日 05:15），自动触发三份投资报告并邮件发送。
+由 **cron-job.org** 外部 cron 服务在每个美股交易日收盘后准时触发，自动发送 A 股日报、美股日报，月末自动发送全市场月结单。
 
 ## 管理的报告
 
@@ -10,35 +10,33 @@
 | 美股持仓日报 | `US-Equity-report` | 每个美股交易日 |
 | 全市场月结单 | `monthly-full-market-report` | 每月最后一个美股交易日 |
 
-## Cron 时间
+## 触发时间
 
-```
-15 21 * * 1-5  (UTC)
-```
+由 cron-job.org 在 **America/New_York** 时区执行 `43 16 * * 1-5`：
 
-| 时区 | 本地时间 | 说明 |
-|------|---------|------|
-| UTC | 21:15 | 统一触发时间 |
-| 北京时间 (UTC+8) | 次日 05:15 | 醒来即可收到报告 |
-| 夏令时 EDT (UTC-4) | 17:15 | 美股收盘后约 75 分钟 |
-| 冬令时 EST (UTC-5) | 16:15 | 美股收盘后约 15 分钟 |
+| 季节 | ET 时间 | UTC | 北京时间 |
+|------|--------|-----|---------|
+| 夏令时 EDT (3-11月) | 16:43 | 20:43 | 次日 04:43 |
+| 冬令时 EST (11-3月) | 16:43 | 21:43 | 次日 05:43 |
 
-一个 cron 覆盖全年，无需区分夏令时/冬令时。
+**一个 cron，全年自动跟随美股时区，收盘后约 43 分钟触发。**
+
+> 不再使用 GitHub 内置 schedule（已被验证触发时间随机，不可靠）。
 
 ## 系统架构
 
 ```
-定时触发 / 手动触发
-        │
+cron-job.org (America/New_York, 43 16 * * 1-5)
+        │  POST repository_dispatch: auto_trigger
         ▼
-  coordinator.yml（6 个 Job）
+  scheduler.yml（6 个 Job）
         │
         ├─ 去重检查 ──────────── 同日缓存判断
         ├─ 交易日判断 ────────── 美股日历 + 月末检测
         ├─ 派发 A股日报 ────────► A-Share-report
         ├─ 派发 美股日报 ───────► US-Equity-report
         ├─ 派发 月结单 ─────────► monthly-full-market-report（仅月末）
-        └─ 写入去重标记 ──────── 防止同日重复派发
+        └─ 写入去重标记 ──────── 防止同日重复派发（仅 auto_trigger 写）
 ```
 
 ## 防重发机制（三层防护）
@@ -58,6 +56,8 @@ GitHub Actions → Daily Report Coordinator → Run workflow：
 | `force` | `false` | 设为 `true` 跳过所有去重和交易日检查 |
 | `reports` | `a_share,us_equity` | 逗号分隔：`a_share`, `us_equity`, `monthly` |
 
+手动触发**不会写去重缓存**，不影响自动触发。
+
 **常用场景：**
 - 周末测试日报：`force=true`，reports 保持默认
 - 测试月报：`force=true`，reports 设为 `a_share,us_equity,monthly`
@@ -69,37 +69,41 @@ GitHub Actions → Daily Report Coordinator → Run workflow：
 
 | Secret | 用途 |
 |--------|------|
-| `REPO_PAT` | 用于跨仓库 dispatch 的 Personal Access Token |
+| `REPO_PAT` | 用于跨仓库 dispatch 的 Classic PAT（repo scope） |
 
-### REPO_PAT 创建步骤
+### 外部 Cron 配置
 
-1. GitHub → Settings → Developer settings → Personal access tokens → Tokens (classic)
-2. Generate new token (classic)
-3. 勾选 `repo` scope（全仓读写权限）
-4. 生成后复制 token，添加到本仓库 Settings → Secrets → Actions，命名为 `REPO_PAT`
+cron-job.org → Job ID: `7741669`
 
-> ⚠️ **必须使用 Classic PAT**，Fine-grained PAT 的 Actions 权限不兼容 repository dispatch API。
+| 配置项 | 值 |
+|--------|-----|
+| URL | `https://api.github.com/repos/zhoujinjia-gif/daily-report-trigger/dispatches` |
+| Method | POST |
+| Body | `{"event_type":"auto_trigger"}` |
+| Cron | `43 16 * * 1-5`（America/New_York 时区） |
 
 ### 目标仓库所需 Secret
 
-三个报告仓库各自需要 SMTP 凭据和 API 密钥（QQ 邮箱授权码、汇率 API Key 等），详见各仓库的 README。
+三个报告仓库各自需要 SMTP 凭据和 API 密钥，详见各仓库的 README。
 
 ## 文件结构
 
 ```
 daily-report-trigger/
-├── .github/workflows/coordinator.yml   # 唯一 workflow 文件
+├── .github/workflows/scheduler.yml     # 唯一 workflow 文件
 ├── README.md                           # 英文说明
 ├── README-CN.md                        # 本文件（中文说明）
 └── history/                            # 设计文档存档
-    ├── daily-report-trigger-architecture-v2.md   # 架构详解（面向 AI）
-    └── daily-report-trigger-v2-prompt.md         # v2 重设计原始需求
+    ├── daily-report-trigger-architecture-v3.md
+    ├── daily-report-trigger-architecture-v2.md
+    └── coordinator-v3.yml              # v3 workflow 备份
 ```
 
 ## 故障排查
 
 | 现象 | 可能原因 | 解决方法 |
 |------|---------|---------|
+| 没收到报告 | cron-job.org 未触发 | 检查 cron-job.org 执行历史 |
 | 所有 Job 灰色跳过 | 今日已 dispatch | 手动触发时 `force=true` |
 | dispatch 报 403 | PAT 是 Fine-grained 而非 Classic | 重新创建 Classic PAT，勾选 `repo` scope |
 | `is_trading_day=false` | 周末或美股假期 | 测试用 `force=true` |
@@ -109,6 +113,4 @@ daily-report-trigger/
 ## 相关链接
 
 - 架构详解：`history/daily-report-trigger-architecture-v3.md`
-- v2 文档：`history/daily-report-trigger-architecture-v2.md`
-- Coordinator 备份：`history/coordinator-v3.yml`
 - 各报告仓库的 Actions 页面可直接手动触发（应急备用）

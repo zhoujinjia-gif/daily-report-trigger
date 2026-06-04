@@ -2,34 +2,34 @@
 
 ## 项目概述 / Overview
 
-**daily-report-trigger** 是三个投资报告仓库的统一调度中心。每个美股交易日 21:15 UTC（北京时间次日 05:15），自动触发 A 股日报、美股日报，并在月末最后一个交易日额外触发全市场月报。
+**daily-report-trigger** 是三个投资报告仓库的统一调度中心。由外部 cron 服务（cron-job.org）在每个美股交易日收盘后准时触发，自动生成 A 股日报、美股日报，并在月末最后一个交易日额外触发全市场月报。
 
 **v3 核心变更**（相对 v2）：
-1. 确认单 cron `15 21 * * 1-5`（无双 cron 旧版残留）
-2. 确认三层去重完整：coordinator cache / 报告仓库无 cron / Python SQLite 23h
-3. 确认 Classic PAT（非 Fine-grained）用于 dispatch（防 403）
-4. check-market force 模式优先逻辑确认
-5. mark-dispatched 使用 `always()` 条件确认
-6. 确认三个报告仓库 workflow 均含 `repository_dispatch: [send_report]`
-7. 确认三个报告仓库 Python `_dedup_check()` 入口完整
-8. history/ 目录归档（v2 文件保留，v3 新增）
-9. `coordinator.yml` 备份到 `history/coordinator-v3.yml`
-10. README 更新（EN + CN）
+1. 触发器从 GitHub schedule 迁移到 **cron-job.org 外部 cron**（GitHub schedule 不可靠）
+2. 单触发器处理全部报告：日报 + 月末月报统一由 `auto_trigger` 事件触发
+3. 文件重命名为 `scheduler.yml`，触发器简化为 `repository_dispatch: [auto_trigger]` + `workflow_dispatch`
+4. 三层去重：coordinator cache / 报告仓库无自有 cron / Python SQLite 23h
+5. 手动触发永不写缓存（`mark-dispatched` 仅 `repository_dispatch` 事件触发）
+6. `is_month_end` 扫描当月全部剩余天数
 
 ---
 
 ## 1. 触发时机 / Cron Schedule
 
-```
-cron: '15 21 * * 1-5'  (UTC 时间)
-```
+### 主触发器：cron-job.org
 
-| 时区 | 时间 | 说明 |
-|------|------|------|
-| UTC | 21:15 | 统一触发时间 |
-| 北京时间 | 次日 05:15 | 用户醒来即可看到报告 |
-| 夏令时 EDT (UTC-4) | 17:15 | 美股 16:00 收盘后 75 分钟 |
-| 冬令时 EST (UTC-5) | 16:15 | 美股 16:00 收盘后 15 分钟 |
+| 配置 | 值 |
+|------|-----|
+| Cron 表达式 | `43 16 * * 1-5` |
+| 时区 | `America/New_York`（自动跟随冬令时/夏令时） |
+| 触发方式 | POST 到 GitHub `repository_dispatch` API |
+
+| 季节 | ET 时间 | UTC | 北京时间 | 说明 |
+|------|--------|-----|---------|------|
+| 夏令时 EDT | 16:43 | 20:43 | 次日 04:43 | 美股收盘(16:00 ET)后 43 分钟 |
+| 冬令时 EST | 16:43 | 21:43 | 次日 05:43 | 美股收盘(16:00 ET)后 43 分钟 |
+
+**一个 cron，全年自动跟随美股时区，无需手动切换。**
 
 ---
 
@@ -38,7 +38,7 @@ cron: '15 21 * * 1-5'  (UTC 时间)
 ```
 daily-report-trigger/
 ├── .github/workflows/
-│   └── coordinator.yml                    # 核心调度 workflow（唯一文件）
+│   └── scheduler.yml                      # 核心调度 workflow（唯一文件）
 ├── README.md                              # 英文说明
 ├── README-CN.md                           # 中文说明
 └── history/                               # 存档
@@ -46,7 +46,7 @@ daily-report-trigger/
     ├── daily-report-trigger-architecture-v2.md
     ├── daily-report-trigger-v3-prompt.md          # v3 需求 spec
     ├── daily-report-trigger-architecture-v3.md    # 本文件
-    └── coordinator-v3.yml                         # ★ v3: coordinator 备份
+    └── coordinator-v3.yml                         # v3 workflow 备份
 ```
 
 ---
@@ -69,17 +69,19 @@ daily-report-trigger/
 
 ```yaml
 on:
-  schedule:
-    - cron: '15 21 * * 1-5'       # 自动触发（周一至五）
-  workflow_dispatch:                # 手动触发
+  repository_dispatch:              # ★ 主触发器：外部 cron（cron-job.org）
+    types: [auto_trigger]
+  workflow_dispatch:                # 手动触发（备用）
     inputs:
-      force:                        # 跳过去重 + 交易日检查
+      force:
         type: choice
         options: ['false', 'true']
         default: 'false'
-      reports:                      # 选择性发送
+      reports:
         default: 'a_share,us_equity'
 ```
+
+**不再使用 GitHub 内置 schedule**（已被证明不可靠，触发时间随机）。外部 cron-job.org 在 `America/New_York` 时区准时触发，自动处理冬令时/夏令时切换。
 
 ### 4.2 Job 依赖图
 
@@ -96,7 +98,7 @@ dedup-check ──► check-market ──┬── dispatch-a-share ────
 
 **机制**：
 1. 获取今日 UTC 日期 → `steps.date.outputs.TODAY`
-2. 用 `actions/cache/restore@v4` 查找 key = `coordinator-dispatched-<TODAY>` 的缓存
+2. 用 `actions/cache/restore@v5` 查找 key = `coordinator-dispatched-<TODAY>` 的缓存
 3. 根据 `cache-hit` 和 `force` 决定是否继续：
 
 | force | cache-hit | 结果 | should_run |
@@ -235,6 +237,41 @@ if: always() && needs.dedup-check.outputs.should_run == 'true'
 | v1 | 2026-05-22 | 双 cron + curl 手动 dispatch，仅 A股+美股 |
 | v2 | 2026-05-30 | 单 cron coordinator、新增月报调度、三层去重、Classic PAT |
 | v3 | 2026-05-31 | 实施确认 + 三层去重验证 + 报告仓库 workflow/Python dedup 确认 + history/归档 + architecture-v3.md |
+| v3.1 | 2026-06-02 | 本地目录去日期前缀（US-Equity-report / A-Share-report / monthly-full-market-report），cache action @v4→@v5 |
+| v3.2 | 2026-06-03 | **三重修复**：(1) `trigger.yml`→`coordinator.yml` 重命名导致 schedule 失效；(2) dispatch 条件添加 `github.event_name == 'schedule'`；(3) `is_month_end` 扫描范围 `range(1,4)`→`range(1,32)` 修复 8 次误判；(4) 添加 Juneteenth 假期 |
+| v3.3 | 2026-06-04 | **force 污染修复**：`mark-dispatched` 仅 `repository_dispatch` 写缓存，手动触发不写 |
+| v4.0 | 2026-06-05 | **迁移到外部 cron**：移除 GitHub schedule，改用 cron-job.org（America/New_York 时区）；文件改名 `scheduler.yml`；单触发器处理日报+月报 |
+
+---
+
+## ⚠️ 11. 已知陷阱
+
+### 陷阱 A：Workflow 重命名导致 Schedule 失效
+
+**现象**：`workflow_dispatch` 正常，但 `schedule` 从不触发（run list 中 0 次 schedule 事件）。
+
+**根因**：workflow 文件从 `trigger.yml` 重命名为 `coordinator.yml` 后，GitHub Actions 未自动重新注册 schedule。空提交（0 文件变更）无法唤醒。
+
+**修复方法**：
+1. 删除 `on.schedule` 块 → push
+2. 加回 `on.schedule` 块 → push
+3. 两次 push 让 GitHub 将 schedule 视为新注册
+
+### 陷阱 B：schedule 事件下 dispatch 条件失败
+
+**现象**：schedule 触发后，所有 dispatch Job 被 SKIP。
+
+**根因**：dispatch Job 条件依赖 `github.event.inputs.reports`，但 `schedule` 事件中 `github.event.inputs` 为空对象 `{}`，`github.event.inputs.reports` 为 null。`null == ''` 为 false，`contains(null, ...)` 为 false → 条件永远不满足。
+
+**修复**：每个 dispatch Job 的 `if:` 条件添加 `github.event_name == 'schedule' ||`：
+
+```yaml
+if: |
+  needs.check-market.outputs.is_trading_day == 'true' &&
+  (github.event_name == 'schedule' || github.event.inputs.reports == '' || contains(github.event.inputs.reports, 'a_share'))
+```
+
+这样 schedule 事件自动 dispatch 全部默认报告（A股+美股），workflow_dispatch 行为不变。
 
 ---
 
