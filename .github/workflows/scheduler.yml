@@ -1,14 +1,15 @@
-# daily-report-trigger/.github/workflows/coordinator.yml
-# 统一触发器 — 每个美股交易日 21:15 UTC（北京时间次日 05:15）发送双日报 + 月底月报
+# daily-report-trigger/.github/workflows/scheduler.yml
+# 统一触发器 — 每个美股交易日 21:43 UTC（北京时间次日 05:43）发送双日报 + 月底月报
+# cron 分钟用 43（非标准分钟），避开 GitHub scheduler 整点/半点高峰期
 
 name: Daily Report Coordinator
 
 on:
   schedule:
-    # 21:15 UTC，周一至五
-    # 夏令时: 美股收盘(20:00 UTC)后 75 分钟
-    # 冬令时: 美股收盘(21:00 UTC)后 15 分钟
-    - cron: '15 21 * * 1-5'
+    # 21:43 UTC，周一至五
+    # 夏令时: 美股收盘(20:00 UTC)后 103 分钟
+    # 冬令时: 美股收盘(21:00 UTC)后 43 分钟
+    - cron: '43 21 * * 1-5'
 
   workflow_dispatch:
     inputs:
