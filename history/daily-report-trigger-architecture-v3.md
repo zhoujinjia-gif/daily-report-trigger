@@ -16,20 +16,19 @@
 
 ## 1. 触发时机 / Cron Schedule
 
-### 主触发器：cron-job.org
+### 主触发器：cron-job.org（双市场独立触发）
 
-| 配置 | 值 |
-|------|-----|
-| Cron 表达式 | `43 16 * * 1-5` |
-| 时区 | `America/New_York`（自动跟随冬令时/夏令时） |
-| 触发方式 | POST 到 GitHub `repository_dispatch` API |
+| 市场 | 事件类型 | Cron | 时区 | 收盘后 |
+|------|---------|------|------|--------|
+| A 股 | `trigger_a_share` | `30 7 * * 1-5` | UTC | 30 min（15:00 收盘 → 15:30 触发） |
+| 美股 | `trigger_us_equity` | `30 16 * * 1-5` | America/New_York | 30 min（16:00 收盘 → 16:30 触发） |
 
-| 季节 | ET 时间 | UTC | 北京时间 | 说明 |
-|------|--------|-----|---------|------|
-| 夏令时 EDT | 16:43 | 20:43 | 次日 04:43 | 美股收盘(16:00 ET)后 43 分钟 |
-| 冬令时 EST | 16:43 | 21:43 | 次日 05:43 | 美股收盘(16:00 ET)后 43 分钟 |
+| 市场 | EDT (夏季) 触发 | EST (冬季) 触发 | 北京时间 |
+|------|----------------|----------------|---------|
+| A 股 | 07:30 UTC | 07:30 UTC | 15:30 |
+| 美股 | 20:30 UTC | 21:30 UTC | 04:30 / 05:30 |
 
-**一个 cron，全年自动跟随美股时区，无需手动切换。**
+**去重缓存按市场隔离，A 股和美股互不影响。**
 
 ---
 
@@ -240,7 +239,7 @@ if: always() && needs.dedup-check.outputs.should_run == 'true'
 | v3.1 | 2026-06-02 | 本地目录去日期前缀（US-Equity-report / A-Share-report / monthly-full-market-report），cache action @v4→@v5 |
 | v3.2 | 2026-06-03 | **三重修复**：(1) `trigger.yml`→`coordinator.yml` 重命名导致 schedule 失效；(2) dispatch 条件添加 `github.event_name == 'schedule'`；(3) `is_month_end` 扫描范围 `range(1,4)`→`range(1,32)` 修复 8 次误判；(4) 添加 Juneteenth 假期 |
 | v3.3 | 2026-06-04 | **force 污染修复**：`mark-dispatched` 仅 `repository_dispatch` 写缓存，手动触发不写 |
-| v4.0 | 2026-06-05 | **迁移到外部 cron**：移除 GitHub schedule，改用 cron-job.org（America/New_York 时区）；文件改名 `scheduler.yml`；单触发器处理日报+月报 |
+| v4.0 | 2026-06-05 | **外部 cron + 双市场分时触发**：A 股 `trigger_a_share` 07:30 UTC（收盘后 30min），美股 `trigger_us_equity` 16:30 ET（收盘后 30min，DST 自动）；去重缓存按市场隔离 |
 
 ---
 
