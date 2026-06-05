@@ -1,18 +1,13 @@
 # daily-report-trigger/.github/workflows/scheduler.yml
-# 统一触发器 — 由外部 cron（cron-job.org）准时触发
-# 每个美股交易日收盘后 ~43 分钟发送双日报，月末自动发送月报
-# 时区 America/New_York → EDT 16:43=20:43 UTC，EST 16:43=21:43 UTC
+# 双市场独立触发器 — 由 cron-job.org 准时触发
+# A股: 07:30 UTC (收盘 07:00 + 30min)
+# 美股: 16:30 America/New_York (收盘 16:00 + 30min, DST 自动处理)
 
 name: Daily Report Coordinator
 
 on:
-  # 主触发器：外部 cron 服务（cron-job.org）
-  # 时区 America/New_York，cron: 43 16 * * 1-5
-  # → EDT(夏季) 16:43 = 20:43 UTC，EST(冬季) 16:43 = 21:43 UTC
-  # 自动跟随美股冬令时/夏令时，收盘后约 43 分钟触发
-  # 日报+月报统一由此触发，check-market 自动判断月末
   repository_dispatch:
-    types: [auto_trigger]
+    types: [trigger_a_share, trigger_us_equity]
 
   workflow_dispatch:
     inputs:
@@ -27,12 +22,11 @@ on:
         required: false
         default: 'a_share,us_equity'
 
-# 所有日期判断使用 UTC
 env:
   TZ: 'UTC'
 
 jobs:
-  # ── Job 1: 去重检查 ──
+  # ── Job 1: 去重检查（按市场隔离） ──
   dedup-check:
     runs-on: ubuntu-latest
     outputs:
@@ -43,12 +37,21 @@ jobs:
         id: date
         run: echo "TODAY=$(date -u +%Y-%m-%d)" >> $GITHUB_OUTPUT
 
+      - name: Set cache key (market-specific for repo_dispatch)
+        id: key
+        run: |
+          if [ "${{ github.event_name }}" = "repository_dispatch" ]; then
+            echo "CACHE_KEY=coordinator-${{ github.event.action }}-${{ steps.date.outputs.TODAY }}" >> $GITHUB_OUTPUT
+          else
+            echo "CACHE_KEY=coordinator-manual-${{ steps.date.outputs.TODAY }}" >> $GITHUB_OUTPUT
+          fi
+
       - name: Check dedup cache
         id: check
         uses: actions/cache/restore@v5
         with:
           path: .coordinator-dedup
-          key: coordinator-dispatched-${{ steps.date.outputs.TODAY }}
+          key: ${{ steps.key.outputs.CACHE_KEY }}
 
       - name: Set run decision
         id: decide
@@ -73,83 +76,75 @@ jobs:
   check-market:
     runs-on: ubuntu-latest
     needs: dedup-check
-    if: needs.dedup-check.outputs.should_run == 'true'
+    if: always() && needs.dedup-check.outputs.should_run == 'true'
     outputs:
       is_trading_day: ${{ steps.market.outputs.is_trading_day }}
       is_month_end: ${{ steps.market.outputs.is_month_end }}
     steps:
-      - name: Check US market status
+      - name: Check market status
         id: market
         env:
           FORCE: ${{ github.event.inputs.force }}
+          TRIGGER_TYPE: ${{ github.event.action }}
         run: |
           python3 << 'EOF'
-          import sys
+          import sys, os
           from datetime import datetime, date, timedelta
-          import os
 
           force = os.environ.get("FORCE", "false")
+          trigger = os.environ.get("TRIGGER_TYPE", "")
+
           if force == "true":
-              print("⚡ Force mode: bypassing market day check")
+              print("⚡ Force mode")
               os.system("echo 'is_trading_day=true' >> $GITHUB_OUTPUT")
               os.system("echo 'is_month_end=true' >> $GITHUB_OUTPUT")
               sys.exit(0)
 
-          today = datetime.utcnow().date()
-          weekday = today.weekday()  # 0=Monday, 6=Sunday
+          # A股触发 — 不需要 US 市场检查
+          if trigger == "trigger_a_share":
+              print("A-Share trigger: no US market check needed")
+              os.system("echo 'is_trading_day=true' >> $GITHUB_OUTPUT")
+              os.system("echo 'is_month_end=false' >> $GITHUB_OUTPUT")
+              sys.exit(0)
 
-          # 周末不是交易日
+          # 美股触发或手动 — 需要检查 US 交易日
+          today = datetime.utcnow().date()
+          weekday = today.weekday()
+
           if weekday >= 5:
               print("Not a trading day (weekend)")
               os.system("echo 'is_trading_day=false' >> $GITHUB_OUTPUT")
               os.system("echo 'is_month_end=false' >> $GITHUB_OUTPUT")
               sys.exit(0)
 
-          # 美股主要假期（非完整列表，但覆盖主要节假日）
           US_HOLIDAYS_2026 = {
-              date(2026, 1, 1),   # 元旦
-              date(2026, 1, 19),  # MLK Day
-              date(2026, 2, 16),  # Presidents Day
-              date(2026, 4, 3),   # Good Friday
-              date(2026, 5, 25),  # Memorial Day
-              date(2026, 6, 19),  # Juneteenth
-              date(2026, 7, 3),   # Independence Day observed
-              date(2026, 9, 7),   # Labor Day
-              date(2026, 11, 26), # Thanksgiving
-              date(2026, 11, 27), # Black Friday (half day, treat as holiday)
-              date(2026, 12, 25), # Christmas
+              date(2026, 1, 1), date(2026, 1, 19), date(2026, 2, 16),
+              date(2026, 4, 3), date(2026, 5, 25), date(2026, 6, 19),
+              date(2026, 7, 3), date(2026, 9, 7), date(2026, 11, 26),
+              date(2026, 11, 27), date(2026, 12, 25),
           }
           US_HOLIDAYS_2027 = {
-              date(2027, 1, 1),
-              date(2027, 1, 18),
-              date(2027, 2, 15),
-              date(2027, 3, 26),  # Good Friday
-              date(2027, 5, 31),  # Memorial Day
-              date(2027, 6, 18),  # Juneteenth observed (6/19 is Saturday)
-              date(2027, 7, 5),   # Independence Day observed
-              date(2027, 9, 6),   # Labor Day
-              date(2027, 11, 25), # Thanksgiving
-              date(2027, 12, 24), # Christmas observed
+              date(2027, 1, 1), date(2027, 1, 18), date(2027, 2, 15),
+              date(2027, 3, 26), date(2027, 5, 31), date(2027, 6, 18),
+              date(2027, 7, 5), date(2027, 9, 6), date(2027, 11, 25),
+              date(2027, 12, 24),
           }
           US_HOLIDAYS = US_HOLIDAYS_2026 | US_HOLIDAYS_2027
 
           is_trading = today not in US_HOLIDAYS
 
-          # 是否为月末最后交易日
           is_month_end = False
           if is_trading:
-              # 扫描当月剩余所有天数，检查是否还有交易日
               has_future_trading = False
               for i in range(1, 32):
                   future = today + timedelta(days=i)
                   if future.month != today.month:
-                      break  # 已进入下月
+                      break
                   if future.weekday() < 5 and future not in US_HOLIDAYS:
                       has_future_trading = True
                       break
               is_month_end = not has_future_trading
 
-          import os
           os.system(f"echo 'is_trading_day={'true' if is_trading else 'false'}' >> $GITHUB_OUTPUT")
           os.system(f"echo 'is_month_end={'true' if is_month_end else 'false'}' >> $GITHUB_OUTPUT")
           print(f"Trading day: {is_trading}, Month end: {is_month_end}")
@@ -161,7 +156,8 @@ jobs:
     needs: [dedup-check, check-market]
     if: |
       needs.check-market.outputs.is_trading_day == 'true' &&
-      (github.event_name == 'repository_dispatch' || github.event.inputs.reports == '' || contains(github.event.inputs.reports, 'a_share'))
+      (github.event.action == 'trigger_a_share' || github.event_name == 'workflow_dispatch') &&
+      (github.event_name != 'workflow_dispatch' || github.event.inputs.reports == '' || contains(github.event.inputs.reports, 'a_share'))
     steps:
       - name: Dispatch A-Share daily report
         uses: actions/github-script@v9
@@ -181,7 +177,6 @@ jobs:
                 source: 'coordinator'
               }
             });
-
             console.log(`✅ A-Share report dispatched for ${today}`);
 
   # ── Job 4: 发送美股日报 ──
@@ -190,7 +185,8 @@ jobs:
     needs: [dedup-check, check-market]
     if: |
       needs.check-market.outputs.is_trading_day == 'true' &&
-      (github.event_name == 'repository_dispatch' || github.event.inputs.reports == '' || contains(github.event.inputs.reports, 'us_equity'))
+      (github.event.action == 'trigger_us_equity' || github.event_name == 'workflow_dispatch') &&
+      (github.event_name != 'workflow_dispatch' || github.event.inputs.reports == '' || contains(github.event.inputs.reports, 'us_equity'))
     steps:
       - name: Dispatch US Equity daily report
         uses: actions/github-script@v9
@@ -210,17 +206,17 @@ jobs:
                 source: 'coordinator'
               }
             });
-
             console.log(`✅ US Equity report dispatched for ${today}`);
 
-  # ── Job 5: 发送月报（仅月末）──
+  # ── Job 5: 发送月报（仅月末，仅美股触发时） ──
   dispatch-monthly:
     runs-on: ubuntu-latest
     needs: [dedup-check, check-market]
     if: |
       needs.check-market.outputs.is_trading_day == 'true' &&
       needs.check-market.outputs.is_month_end == 'true' &&
-      (github.event_name == 'repository_dispatch' || github.event.inputs.reports == '' || contains(github.event.inputs.reports, 'monthly'))
+      (github.event.action == 'trigger_us_equity' || github.event_name == 'workflow_dispatch') &&
+      (github.event_name != 'workflow_dispatch' || github.event.inputs.reports == '' || contains(github.event.inputs.reports, 'monthly'))
     steps:
       - name: Dispatch Monthly report
         uses: actions/github-script@v9
@@ -241,10 +237,9 @@ jobs:
                 is_month_end: true
               }
             });
-
             console.log(`✅ Monthly report dispatched for ${today} (MONTH END)`);
 
-  # ── Job 6: 写入去重缓存（仅成功后）──
+  # ── Job 6: 写入去重缓存（按市场隔离，仅自动触发时写） ──
   mark-dispatched:
     runs-on: ubuntu-latest
     needs: [dedup-check, dispatch-a-share, dispatch-us-equity]
@@ -259,5 +254,4 @@ jobs:
         uses: actions/cache/save@v5
         with:
           path: .coordinator-dedup
-          key: coordinator-dispatched-${{ needs.dedup-check.outputs.today }}
-
+          key: coordinator-${{ github.event.action }}-${{ needs.dedup-check.outputs.today }}
